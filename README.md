@@ -240,8 +240,4 @@ sentry AI/
 
 MIT — see [LICENSE](LICENSE).
 
-## Status
 
-v1.1.1 — pipeline + Gmail adapter + live API enrichment (with URL dedupe +
-lookup budget) + missing-auth handling; all code-review findings resolved;
-61/61 tests passing. Not yet deployed (see `DEPLOY_CHECKLIST.md`).
