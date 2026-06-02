@@ -1,0 +1,16 @@
+{
+  "email_id": "f3a1-9b2c",
+  "headers": {
+    "from": "security@paypa1-verify.com",
+    "reply_to": "collect@harvester.ru",
+    "subject": "Urgent: Verify your account immediately",
+    "received_spf": "fail",
+    "dkim_result": "none",
+    "dmarc_result": "fail",
+    "x_originating_ip": "185.220.101.45"
+  },
+  "body_text": "Your PayPal account will be suspended in 24 hours. Click here to verify: http://paypa1-verify.com/login",
+  "body_html": null,
+  "attachments": [],
+  "urls_extracted": ["http://paypa1-verify.com/login"]
+}

@@ -1,0 +1,44 @@
+{
+  "_comment": "Prefetched threat-intel cache for `python -m sentryai email.json --intel <this file>`. Fill buckets from browser checks of abuseipdb.com / virustotal.com / whois. Any IOC not present here falls back to the offline stub. Keys are the exact IOC values (IP, full URL, sha256, domain).",
+  "abuseipdb": {
+    "185.220.101.45": {
+      "ip": "185.220.101.45",
+      "abuse_confidence_score": 100,
+      "is_public": true,
+      "usage_type": "Data Center/Web Hosting/Transit",
+      "isp": "Example ISP",
+      "domain": "example.org",
+      "total_reports": 1200
+    }
+  },
+  "greynoise": {
+    "185.220.101.45": {
+      "ip": "185.220.101.45",
+      "noise": true,
+      "riot": false,
+      "classification": "malicious",
+      "name": "Tor Exit Scanner",
+      "last_seen": "2026-05-30"
+    }
+  },
+  "virustotal_url": {
+    "http://paypa1-verify.com/login": {
+      "url": "http://paypa1-verify.com/login",
+      "malicious_votes": 14,
+      "suspicious_votes": 3,
+      "harmless_votes": 0,
+      "categories": ["phishing"],
+      "final_url": "http://paypa1-verify.com/login"
+    }
+  },
+  "virustotal_hash": {},
+  "whois": {
+    "paypa1-verify.com": {
+      "domain": "paypa1-verify.com",
+      "creation_date": "2026-05-28",
+      "registrar": "NameCheap",
+      "country": "RU",
+      "age_days": 4
+    }
+  }
+}

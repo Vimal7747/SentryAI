@@ -1,0 +1,2 @@
+# SentryAI runs on the Python 3.9+ standard library only — no runtime deps.
+# Tests use the stdlib `unittest` module (pytest optional).

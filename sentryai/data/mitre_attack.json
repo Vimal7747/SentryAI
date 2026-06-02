@@ -1,0 +1,116 @@
+{
+  "techniques": [
+    {
+      "technique_id": "T1566",
+      "technique_name": "Phishing",
+      "tactic": "Initial Access",
+      "keywords": ["phishing", "email", "lure", "social engineering", "spoof", "impersonation", "brand"],
+      "description": "Adversaries send phishing messages to gain access to victim systems, often via malicious attachments or links."
+    },
+    {
+      "technique_id": "T1566.001",
+      "technique_name": "Spearphishing Attachment",
+      "tactic": "Initial Access",
+      "keywords": ["attachment", "malware", "delivery", "document", "macro", "executable", "spearphishing attachment"],
+      "description": "Adversaries send spearphishing emails with a malicious attachment to gain access to victim systems."
+    },
+    {
+      "technique_id": "T1566.002",
+      "technique_name": "Spearphishing Link",
+      "tactic": "Initial Access",
+      "keywords": ["link", "url", "click", "redirect", "credential harvesting", "login page", "spearphishing link", "lookalike domain"],
+      "description": "Adversaries send spearphishing emails with a malicious link to elicit clicks and credential entry."
+    },
+    {
+      "technique_id": "T1598",
+      "technique_name": "Phishing for Information",
+      "tactic": "Reconnaissance",
+      "keywords": ["information", "reconnaissance", "solicit", "verify details", "confirm identity"],
+      "description": "Adversaries send phishing messages to elicit sensitive information that can be used during targeting."
+    },
+    {
+      "technique_id": "T1598.003",
+      "technique_name": "Spearphishing Link",
+      "tactic": "Reconnaissance",
+      "keywords": ["link", "url", "credential", "verify now", "harvest", "spearphishing link", "fake login"],
+      "description": "Adversaries send spearphishing messages with malicious links to gather credentials or information."
+    },
+    {
+      "technique_id": "T1056",
+      "technique_name": "Input Capture",
+      "tactic": "Collection",
+      "keywords": ["input capture", "login form", "keylog", "credential", "password", "form", "otp"],
+      "description": "Adversaries capture user input (e.g. via fake login forms) to obtain credentials or other information."
+    },
+    {
+      "technique_id": "T1056.003",
+      "technique_name": "Web Portal Capture",
+      "tactic": "Collection",
+      "keywords": ["web portal", "login form", "fake portal", "credential capture", "html form"],
+      "description": "Adversaries capture credentials entered into a malicious or compromised web portal/login form."
+    },
+    {
+      "technique_id": "T1534",
+      "technique_name": "Internal Spearphishing",
+      "tactic": "Lateral Movement",
+      "keywords": ["internal", "compromised account", "colleague", "ceo", "internal sender"],
+      "description": "Adversaries use an internal, already-compromised account to phish other users within the organisation."
+    },
+    {
+      "technique_id": "T1656",
+      "technique_name": "Impersonation",
+      "tactic": "Defense Evasion",
+      "keywords": ["impersonation", "ceo", "authority", "it department", "hmrc", "bank", "executive", "business email compromise", "bec", "pretext"],
+      "description": "Adversaries impersonate a trusted person or organisation to manipulate a victim into taking an action."
+    },
+    {
+      "technique_id": "T1657",
+      "technique_name": "Financial Theft",
+      "tactic": "Impact",
+      "keywords": ["financial", "wire transfer", "invoice", "payment", "gift card", "prize", "reward", "bank details", "refund"],
+      "description": "Adversaries steal monetary resources through fraud, extortion, or business email compromise."
+    },
+    {
+      "technique_id": "T1036",
+      "technique_name": "Masquerading",
+      "tactic": "Defense Evasion",
+      "keywords": ["lookalike domain", "spoof", "masquerade", "typosquat", "display name", "homoglyph", "zero-width", "evasion"],
+      "description": "Adversaries manipulate features of their artifacts (domains, names) to appear legitimate and evade detection."
+    },
+    {
+      "technique_id": "T1027",
+      "technique_name": "Obfuscated Files or Information",
+      "tactic": "Defense Evasion",
+      "keywords": ["base64", "obfuscation", "encoded", "zero-width", "whitespace", "hidden", "encoding", "evasion"],
+      "description": "Adversaries obfuscate content (encoding, hidden characters) to evade detection and analysis."
+    },
+    {
+      "technique_id": "T1204",
+      "technique_name": "User Execution",
+      "tactic": "Execution",
+      "keywords": ["user execution", "click", "open attachment", "enable macro", "run", "double-click"],
+      "description": "Adversaries rely on a user opening a malicious file or link for execution."
+    },
+    {
+      "technique_id": "T1204.001",
+      "technique_name": "Malicious Link",
+      "tactic": "Execution",
+      "keywords": ["malicious link", "url", "click here", "redirect chain"],
+      "description": "Adversaries rely on a user clicking a malicious link to gain execution."
+    },
+    {
+      "technique_id": "T1204.002",
+      "technique_name": "Malicious File",
+      "tactic": "Execution",
+      "keywords": ["malicious file", "attachment", "document", "executable", "open file"],
+      "description": "Adversaries rely on a user opening a malicious file to gain execution."
+    },
+    {
+      "technique_id": "AML.T0051",
+      "technique_name": "LLM Prompt Injection",
+      "tactic": "ATLAS: Initial Access / Defense Evasion",
+      "keywords": ["prompt injection", "adversarial input", "llm", "ignore previous instructions", "jailbreak", "system prompt", "ai analyst"],
+      "description": "Adversaries craft inputs (prompt injection) to manipulate an LLM-based system into ignoring its instructions or behaving unsafely. (MITRE ATLAS)"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentryai"
+version = "1.1.1"
+description = "Agentic phishing-email analyser: pipeline, IOC enrichment, MITRE ATT&CK mapping, JSON verdict."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Vimal" }]
+keywords = ["phishing", "security", "email", "threat-intelligence", "mitre-attack", "ioc"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Security",
+  "Operating System :: OS Independent",
+]
+dependencies = []   # standard library only
+
+[project.scripts]
+sentryai = "sentryai.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sentryai*"]
+
+[tool.setuptools.package-data]
+sentryai = ["data/*.json"]
