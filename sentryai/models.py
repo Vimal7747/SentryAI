@@ -8,6 +8,7 @@ input/output schema defined in the SentryAI system specification.
 from __future__ import annotations
 
 import uuid
+from sentryai.validation import validate_email, mapping
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
 
@@ -23,7 +24,7 @@ class Attachment:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Attachment":
-        d = d or {}
+        d = mapping(d, "attachment")
         return cls(
             filename=d.get("filename"),
             sha256=d.get("sha256"),
@@ -43,7 +44,7 @@ class Headers:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Headers":
-        d = d or {}
+        d = mapping(d, "headers")
         return cls(
             from_=d.get("from"),
             reply_to=d.get("reply_to"),
@@ -72,7 +73,7 @@ class EmailInput:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "EmailInput":
-        d = d or {}
+        d = validate_email(d)
         notes: List[str] = []
 
         email_id = d.get("email_id")

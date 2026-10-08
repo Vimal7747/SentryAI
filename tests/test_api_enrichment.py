@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -94,7 +95,7 @@ class TestApiEnricher(unittest.TestCase):
                 "last_analysis_stats": {"malicious": 12, "suspicious": 1, "harmless": 3},
                 "categories": {"a": "phishing"}}}})),
             ("rdap.org", (200, {"events": [{"eventAction": "registration",
-                "eventDate": "2026-05-28T00:00:00Z"}], "entities": []})),
+                "eventDate": (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()}], "entities": []})),
         ]
         e = self._enricher(routes)
         iocs = {"ips": ["185.220.101.45"], "urls": ["http://paypa1-verify.com/login"],

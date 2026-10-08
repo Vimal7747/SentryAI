@@ -1,4 +1,4 @@
-"""Tests for URL dedupe-by-registrable-domain and the --live lookup budget."""
+"""Tests for URL exact-URL deduplication and the --live lookup budget."""
 
 import os
 import sys
@@ -23,30 +23,30 @@ class CountingEnricher(enr.StubEnricher):
 
 
 class TestUrlDedupeAndBudget(unittest.TestCase):
-    def test_same_domain_urls_one_lookup_scored_once(self):
+    def test_same_domain_urls_checked_independently(self):
         e = CountingEnricher()
         iocs = {"ips": [], "hashes": [], "emails": [], "domains": [],
                 "urls": ["http://evil.com/a", "http://evil.com/b", "http://evil.com/c"]}
         results, notes = enrich_iocs(iocs, e)
         url_results = [r for r in results if r.ioc_type == "url"]
-        # 3 URLs in output, but only ONE VirusTotal call (deduped by domain).
+        # All three distinct paths require independent reputation lookups.
         self.assertEqual(len(url_results), 3)
-        self.assertEqual(e.url_calls, 1)
-        # Only the representative contributes points; siblings are 0.
+        self.assertEqual(e.url_calls, 3)
+        # Each independently malicious URL contributes evidence.
         pts = sorted(r.points_contributed for r in url_results)
-        self.assertEqual(pts, [0, 0, 45])
+        self.assertEqual(pts, [45, 45, 45])
 
-    def test_budget_caps_distinct_domain_lookups(self):
+    def test_budget_caps_distinct_url_lookups(self):
         e = CountingEnricher()
         iocs = {"ips": [], "hashes": [], "emails": [], "domains": [],
                 "urls": ["http://a.com/1", "http://b.com/1", "http://c.com/1"]}
         results, notes = enrich_iocs(iocs, e, max_url_lookups=2)
-        self.assertEqual(e.url_calls, 2)  # only 2 distinct-domain lookups
+        self.assertEqual(e.url_calls, 2)  # only 2 distinct-URL lookups
         skipped = [r for r in results if r.ioc_type == "url" and r.verdict == "unknown"]
         self.assertEqual(len(skipped), 1)
         self.assertTrue(any("budget" in n for n in notes))
 
-    def test_no_budget_means_all_distinct_domains_checked(self):
+    def test_no_budget_means_all_distinct_urls_checked(self):
         e = CountingEnricher()
         iocs = {"ips": [], "hashes": [], "emails": [], "domains": [],
                 "urls": ["http://a.com/1", "http://b.com/1"]}

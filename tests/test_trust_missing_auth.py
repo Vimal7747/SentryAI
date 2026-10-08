@@ -6,13 +6,18 @@ ABSENT auth headers become neutral; explicit fail/none results still score.
 import os
 import sys
 import unittest
+from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sentryai.models import EmailInput  # noqa: E402
-from sentryai.stage1_headers import analyze_headers  # noqa: E402
-from sentryai.pipeline import analyze  # noqa: E402
+from sentryai.stage1_headers import analyze_headers as _analyze_headers  # noqa: E402
+from sentryai.pipeline import analyze as _analyze  # noqa: E402
 
+
+# Fixture authentication values represent separately verified results.
+analyze = partial(_analyze, trusted_auth_results=True)
+analyze_headers = partial(_analyze_headers, trusted_auth_results=True)
 
 class TestTrustMissingAuth(unittest.TestCase):
     def _email(self, **headers):
@@ -78,5 +83,7 @@ class TestTrustMissingAuth(unittest.TestCase):
         self.assertEqual(v["verdict"], "PHISHING")
 
 
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    unittest.main()

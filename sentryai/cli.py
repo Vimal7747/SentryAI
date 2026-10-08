@@ -30,23 +30,30 @@ import argparse
 import json
 import sys
 from typing import Any, List, Union
+from sentryai.validation import MAX_INPUT_BYTES, DEFAULT_LOOKUP_CALLS, InputValidationError
 
 
 def _read_input(file_path):
     """Read JSON from a file path or from stdin. Exits(1) on failure."""
     try:
         if file_path:
-            with open(file_path, encoding="utf-8") as fh:
-                raw = fh.read()
+            with open(file_path, "rb") as fh:
+                raw = fh.read(MAX_INPUT_BYTES + 1)
         else:
-            raw = sys.stdin.read()
-    except OSError as exc:
+            stream = getattr(sys.stdin, "buffer", sys.stdin)
+            raw = stream.read(MAX_INPUT_BYTES + 1)
+        size = len(raw) if isinstance(raw, bytes) else len(raw.encode("utf-8"))
+        if size > MAX_INPUT_BYTES:
+            raise InputValidationError("Input exceeds the 2 MB limit")
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+    except (OSError, UnicodeError, InputValidationError) as exc:
         print(f"sentryai: error reading input: {exc}", file=sys.stderr)
         sys.exit(1)
 
     try:
         return json.loads(raw)
-    except json.JSONDecodeError as exc:
+    except (ValueError, RecursionError) as exc:
         print(f"sentryai: invalid JSON input: {exc}", file=sys.stderr)
         sys.exit(1)
 
@@ -75,7 +82,8 @@ def _make_enricher(intel_path):
     return enr.PrefetchedEnricher(cache, fallback=enr.StubEnricher())
 
 
-def _run(data, intel_path=None, live=False, trust_missing_auth=False, max_url_lookups=None):
+def _run(data, intel_path=None, live=False, trust_missing_auth=False, max_url_lookups=None,
+         trusted_auth_results=False, max_lookup_calls=DEFAULT_LOOKUP_CALLS):
     """Dispatch to the pipeline (single or batch) and return verdict dict(s)."""
     try:
         from sentryai.pipeline import analyze, analyze_batch
@@ -101,10 +109,15 @@ def _run(data, intel_path=None, live=False, trust_missing_auth=False, max_url_lo
         if isinstance(data, list):
             return analyze_batch(data, enricher=enricher,
                                  trust_missing_auth=trust_missing_auth,
-                                 max_url_lookups=max_url_lookups)
+                                 max_url_lookups=max_url_lookups,
+                                 trusted_auth_results=trusted_auth_results, max_lookup_calls=max_lookup_calls)
         return analyze(data, enricher=enricher,
                        trust_missing_auth=trust_missing_auth,
-                       max_url_lookups=max_url_lookups)
+                       max_url_lookups=max_url_lookups,
+                       trusted_auth_results=trusted_auth_results, max_lookup_calls=max_lookup_calls)
+    except InputValidationError as exc:
+        print(f"sentryai: invalid input: {exc}", file=sys.stderr)
+        sys.exit(1)
     except Exception as exc:  # pylint: disable=broad-except
         print(f"sentryai: pipeline error: {exc}", file=sys.stderr)
         sys.exit(2)
@@ -155,8 +168,8 @@ def main(argv=None):
         default=None,
         metavar="N",
         help=(
-            "Cap distinct-domain URL reputation lookups (protects rate-limited "
-            "API budgets). URLs are deduped by registrable domain first. "
+            "Cap distinct URL reputation lookups (protects rate-limited "
+            "API budgets). URLs are deduped by exact URL first. "
             "Defaults to 15 when --live is set, unlimited otherwise."
         ),
     )
@@ -170,6 +183,11 @@ def main(argv=None):
             "Gmail connector). Explicit fail/none/neutral results are still scored."
         ),
     )
+
+    parser.add_argument("--trusted-auth-results", action="store_true",
+                        help="Accept normalized auth results only when supplied by a trusted mail verifier. Never use for raw email headers.")
+    parser.add_argument("--max-lookup-calls", type=int, default=DEFAULT_LOOKUP_CALLS,
+                        help="Maximum total provider calls per email, including retries (default 100; 0 disables lookups).")
 
     fmt_group = parser.add_mutually_exclusive_group()
     fmt_group.add_argument(
@@ -196,7 +214,9 @@ def main(argv=None):
     data = _read_input(args.input_file)
     result = _run(data, intel_path=args.intel, live=args.live,
                   trust_missing_auth=args.trust_missing_auth,
-                  max_url_lookups=args.max_url_lookups)
+                  max_url_lookups=args.max_url_lookups,
+                  trusted_auth_results=args.trusted_auth_results, max_lookup_calls=args.max_lookup_calls)
 
     print(json.dumps(result, indent=indent, default=str))
-    sys.exit(0)
+    failed = isinstance(result, list) and any(item.get("verdict") == "ERROR" for item in result)
+    sys.exit(2 if failed else 0)

@@ -7,6 +7,7 @@ silently regress. Findings are numbered to match the review.
 import os
 import sys
 import unittest
+from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -15,12 +16,15 @@ from sentryai import enrichment as enr  # noqa: E402
 from sentryai import stage2_content as s2  # noqa: E402
 from sentryai import stage3_iocs as s3  # noqa: E402
 from sentryai.stage5_scoring import total_score  # noqa: E402
-from sentryai.pipeline import analyze  # noqa: E402
+from sentryai.pipeline import analyze as _analyze  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # #1 — lookalike domain must not flag legitimate brand subdomains
 # ---------------------------------------------------------------------------
+# Fixture authentication values represent separately verified results.
+analyze = partial(_analyze, trusted_auth_results=True)
+
 class TestLookalikeDomain(unittest.TestCase):
     LEGIT = [
         "paypal.com", "www.paypal.com", "accounts.google.com",
@@ -197,5 +201,7 @@ class TestPrizeRegexBound(unittest.TestCase):
         self.assertIsNotNone(s2._PRIZE_RE.search(near))
 
 
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    unittest.main()

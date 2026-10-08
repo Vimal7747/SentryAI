@@ -207,8 +207,8 @@ def _build_recommended_actions(
             )
         if human_review:
             actions.append(
-                "Escalate to a human analyst: the risk score is in the borderline range "
-                "and no hard malicious-infrastructure evidence was found."
+                "Escalate to a human analyst: analysis is incomplete or borderline "
+                "and requires manual triage."
             )
         else:
             actions.append(
@@ -220,12 +220,11 @@ def _build_recommended_actions(
             )
 
     else:  # BENIGN
-        actions.append(
-            "Deliver the email to the recipient's inbox."
-        )
-        actions.append(
-            "Continue routine monitoring; no immediate action required."
-        )
+        if human_review:
+            actions.append("Hold the email for manual review before delivery; analysis is incomplete or borderline.")
+        else:
+            actions.append("Deliver the email to the recipient's inbox.")
+            actions.append("Continue routine monitoring; no immediate action required.")
         if suspicious_iocs:
             actions.append(
                 "Note: some IOCs returned a suspicious (non-malicious) verdict — "

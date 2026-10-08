@@ -63,7 +63,7 @@ class Enricher(abc.ABC):
 
 
 class StubEnricher(Enricher):
-    """Offline backend. Returns neutral/clean defaults unless an IOC appears
+    """Offline backend. Returns unknown defaults unless an IOC appears
     in the small built-in demo reputation table.
 
     This guarantees the pipeline completes without network access or API
@@ -74,7 +74,7 @@ class StubEnricher(Enricher):
     name = "stub"
 
     # Minimal demo reputation table keyed by IOC value. Used for the spec
-    # example and tests. Everything not listed comes back clean/unknown.
+    # example and tests. Everything not listed returns None (unknown).
     KNOWN_BAD_IPS = {
         "185.220.101.45": {
             "abuse_confidence_score": 100,
@@ -112,15 +112,7 @@ class StubEnricher(Enricher):
                 "domain": bad["domain"],
                 "total_reports": bad["total_reports"],
             }
-        return {
-            "ip": ip,
-            "abuse_confidence_score": 0,
-            "is_public": True,
-            "usage_type": "unknown",
-            "isp": "unknown",
-            "domain": "",
-            "total_reports": 0,
-        }
+        return None
 
     def greynoise_lookup(self, ip: str) -> Optional[Dict[str, Any]]:
         self._record("greynoise_lookup")
@@ -134,14 +126,7 @@ class StubEnricher(Enricher):
                 "name": bad["greynoise_name"],
                 "last_seen": "recent",
             }
-        return {
-            "ip": ip,
-            "noise": False,
-            "riot": False,
-            "classification": "unknown",
-            "name": "",
-            "last_seen": "",
-        }
+        return None
 
     def virustotal_url_scan(self, url: str) -> Optional[Dict[str, Any]]:
         self._record("virustotal_url_scan")
@@ -155,14 +140,7 @@ class StubEnricher(Enricher):
                 "categories": bad["categories"],
                 "final_url": bad["final_url"],
             }
-        return {
-            "url": url,
-            "malicious_votes": 0,
-            "suspicious_votes": 0,
-            "harmless_votes": 70,
-            "categories": [],
-            "final_url": url,
-        }
+        return None
 
     def virustotal_hash_lookup(self, sha256: str) -> Optional[Dict[str, Any]]:
         self._record("virustotal_hash_lookup")
@@ -176,14 +154,7 @@ class StubEnricher(Enricher):
                 "first_seen": bad.get("first_seen", ""),
                 "last_seen": bad.get("last_seen", ""),
             }
-        return {
-            "sha256": sha256,
-            "malicious_votes": 0,
-            "suspicious_votes": 0,
-            "file_type": "unknown",
-            "first_seen": "",
-            "last_seen": "",
-        }
+        return None
 
     def whois_lookup(self, domain: str) -> Optional[Dict[str, Any]]:
         self._record("whois_lookup")
@@ -196,13 +167,7 @@ class StubEnricher(Enricher):
                 "country": young["country"],
                 "age_days": young["age_days"],
             }
-        return {
-            "domain": domain,
-            "creation_date": "",
-            "registrar": "unknown",
-            "country": "unknown",
-            "age_days": 9999,
-        }
+        return None
 
 
 class PrefetchedEnricher(Enricher):
@@ -254,3 +219,31 @@ class PrefetchedEnricher(Enricher):
 
     def whois_lookup(self, domain: str) -> Optional[Dict[str, Any]]:
         return self._get("whois", domain, "whois_lookup", "whois_lookup")
+
+
+class BudgetEnricher(Enricher):
+    """Limit provider calls per email, including retries, and isolate metadata."""
+    def __init__(self, delegate: Enricher, maximum: int):
+        super().__init__()
+        self.delegate = delegate
+        self.remaining = maximum
+        self.exhausted = False
+
+    def _call(self, method: str, value: str):
+        if self.remaining <= 0:
+            self.exhausted = True
+            return None
+        self.remaining -= 1
+        self._record(method)
+        return getattr(self.delegate, method)(value)
+
+    def abuseipdb_lookup(self, ip):
+        return self._call("abuseipdb_lookup", ip)
+    def greynoise_lookup(self, ip):
+        return self._call("greynoise_lookup", ip)
+    def virustotal_url_scan(self, url):
+        return self._call("virustotal_url_scan", url)
+    def virustotal_hash_lookup(self, sha256):
+        return self._call("virustotal_hash_lookup", sha256)
+    def whois_lookup(self, domain):
+        return self._call("whois_lookup", domain)
