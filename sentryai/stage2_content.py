@@ -102,7 +102,6 @@ _CRED_REQUEST_RE = re.compile(
     r"login\s+credentials?)\b",
     re.I,
 )
-_HTML_FORM_RE = re.compile(r"<form\b", re.I)
 _HTML_PASSWORD_INPUT_RE = re.compile(
     r'<input[^>]+type\s*=\s*["\']?password["\']?',
     re.I,
@@ -116,6 +115,15 @@ _BRAND_ROOTS: List[str] = [
     "paypal", "amazon", "google", "microsoft", "apple", "netflix",
     "facebook",
 ]
+
+# Explicit trusted registrable domains; a brand label alone proves no ownership.
+_BRAND_DOMAINS = {
+    "paypal": {"paypal.com", "paypal.co.uk"},
+    "amazon": {"amazon.com", "amazon.co.uk"},
+    "google": {"google.com", "google.co.uk"},
+    "microsoft": {"microsoft.com"}, "apple": {"apple.com"},
+    "netflix": {"netflix.com"}, "facebook": {"facebook.com"},
+}
 
 _DIGIT_TO_LETTERS = {
     "0": ["o"], "1": ["i", "l"], "2": ["z"], "3": ["e"], "4": ["a"],
@@ -163,7 +171,7 @@ def _is_lookalike_domain(domain):
     sub_labels = host_labels[:-reg_label_count] if len(host_labels) > reg_label_count else []
 
     for brand in _BRAND_ROOTS:
-        if reg_sld == brand:
+        if reg in _BRAND_DOMAINS[brand]:
             continue
         sld_tokens = reg_sld.split("-")
         if brand in sld_tokens:
@@ -187,7 +195,20 @@ def _check_credential_harvest(combined_text, body_html, all_urls):
     """Detect credential-harvesting patterns; return zero or more signals."""
     out = []
 
-    if _CRED_REQUEST_RE.search(combined_text):
+    # Require a request near the credential, excluding negated requests.
+    # Split contrast clauses too: advice must not mask a following request.
+    clauses = re.split(r"[.!?;\n]+|\b(?:but|however)\b", combined_text, flags=re.I)
+    requests = []
+    for clause in clauses:
+        for credential in _CRED_REQUEST_RE.finditer(clause):
+            prefix = clause[max(0, credential.start() - 100):credential.start()]
+            verbs = list(re.finditer(r"\b(?:share|send|give|disclose|enter|provide|submit|confirm|verify|type)\b", prefix, re.I))
+            if verbs:
+                verb = verbs[-1]
+                before = prefix[max(0, verb.start() - 30):verb.start()]
+                if not re.search(r"\b(?:never|do not|don['’]t)\s+(?:\w+\s+){0,2}$", before, re.I):
+                    requests.append(clause)
+    if requests:
         out.append(
             ContentSignal(
                 signal_type="credential_harvest",
@@ -200,14 +221,13 @@ def _check_credential_harvest(combined_text, body_html, all_urls):
         )
 
     if body_html:
-        has_form = bool(_HTML_FORM_RE.search(body_html))
         has_pw_input = bool(_HTML_PASSWORD_INPUT_RE.search(body_html))
-        if has_form or has_pw_input:
+        if has_pw_input:
             out.append(
                 ContentSignal(
                     signal_type="credential_harvest",
                     description=(
-                        "HTML body contains a form with a password input field, "
+                        "HTML body contains a password input field, "
                         "consistent with an inline credential-harvesting page."
                     ),
                     points_contributed=40,
@@ -268,7 +288,8 @@ def _check_impersonation(text):
     """Detect brand and authority impersonation signals."""
     out = []
 
-    if _BRAND_IMPERSONATION_RE.search(text) and _BRAND_CONTEXT_RE.search(text):
+    if (_BRAND_IMPERSONATION_RE.search(text) and _BRAND_CONTEXT_RE.search(text)
+            and re.search(r"\b(?:verify|confirm|update|sign[- ]in|login|suspend|suspended)\b", text, re.I)):
         out.append(
             ContentSignal(
                 signal_type="impersonation",

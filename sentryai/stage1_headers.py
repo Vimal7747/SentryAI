@@ -11,6 +11,7 @@ fields that have already been normalised by models.Headers.from_dict().
 from __future__ import annotations
 
 from typing import List, Tuple
+import ipaddress
 
 from sentryai.models import EmailInput, HeaderAuthSignals
 from sentryai.textutils import domain_from_email
@@ -23,6 +24,7 @@ from sentryai.textutils import domain_from_email
 def analyze_headers(
     email: EmailInput,
     trust_missing_auth: bool = False,
+    trusted_auth_results: bool = False,
 ) -> Tuple[HeaderAuthSignals, List[str]]:
     """Analyse email authentication headers and return scored signals.
 
@@ -34,6 +36,8 @@ def analyze_headers(
 
     Args:
         email: A fully parsed EmailInput instance.
+        trusted_auth_results: Caller authorization for separately verified
+            normalized results. Raw email headers must never set this flag.
 
     Returns:
         A 2-tuple of:
@@ -44,19 +48,18 @@ def analyze_headers(
     """
     h = email.headers
     points = 0
+    values = (h.received_spf, h.dkim_result, h.dmarc_result)
+    spf, dkim, dmarc = tuple((v or "").strip().lower() or None for v in values) if trusted_auth_results else (None, None, None)
 
     # --- SPF -----------------------------------------------------------------
-    spf = h.received_spf  # already lowercased or None
     if not (trust_missing_auth and spf is None) and spf != "pass":
         points += 15
 
     # --- DKIM ----------------------------------------------------------------
-    dkim = h.dkim_result  # already lowercased or None
     if not (trust_missing_auth and dkim is None) and dkim != "pass":
         points += 15
 
     # --- DMARC ---------------------------------------------------------------
-    dmarc = h.dmarc_result  # already lowercased or None
     if not (trust_missing_auth and dmarc is None) and dmarc != "pass":
         points += 20
 
@@ -69,7 +72,11 @@ def analyze_headers(
     ips_to_enrich: List[str] = []
     if h.x_originating_ip:
         ip = h.x_originating_ip.strip()
-        if ip:
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            pass
+        else:
             ips_to_enrich.append(ip)
 
     signals = HeaderAuthSignals(

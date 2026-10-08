@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import unittest
+from functools import partial
 
 # Make the package importable when tests are run from the repo root.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,12 +18,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sentryai.models import EmailInput  # noqa: E402
 from sentryai import enrichment as enr  # noqa: E402
 from sentryai import security  # noqa: E402
-from sentryai.stage1_headers import analyze_headers  # noqa: E402
+from sentryai.stage1_headers import analyze_headers as _analyze_headers  # noqa: E402
 from sentryai.stage2_content import analyze_content  # noqa: E402
 from sentryai.stage3_iocs import extract_iocs, enrich_iocs  # noqa: E402
 from sentryai.stage4_mitre import map_techniques  # noqa: E402
 from sentryai.stage5_scoring import total_score, classify  # noqa: E402
-from sentryai.pipeline import analyze, analyze_batch  # noqa: E402
+from sentryai.pipeline import analyze as _analyze, analyze_batch  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SAMPLE_PATH = os.path.join(os.path.dirname(HERE), "examples", "sample_email.json")
@@ -36,6 +37,10 @@ def load_sample():
 # ---------------------------------------------------------------------------
 # Stage 1 — header authentication
 # ---------------------------------------------------------------------------
+# Fixture authentication values represent separately verified results.
+analyze = partial(_analyze, trusted_auth_results=True)
+analyze_headers = partial(_analyze_headers, trusted_auth_results=True)
+
 class TestStage1Headers(unittest.TestCase):
     def test_all_fail_and_mismatch(self):
         email = EmailInput.from_dict(load_sample())
@@ -205,10 +210,10 @@ class TestSecurity(unittest.TestCase):
 # Integration — full pipeline
 # ---------------------------------------------------------------------------
 class TestPipeline(unittest.TestCase):
-    def test_sample_is_phishing_high(self):
+    def test_sample_is_phishing_with_incomplete_intel(self):
         verdict = analyze(load_sample())
         self.assertEqual(verdict["verdict"], "PHISHING")
-        self.assertEqual(verdict["confidence"], "high")
+        self.assertEqual(verdict["confidence"], "low")
         self.assertGreaterEqual(verdict["risk_score"], 85)
         self.assertGreaterEqual(len(verdict["mitre_attack"]), 1)
         self.assertEqual(verdict["analysis_metadata"]["stages_completed"],
@@ -256,5 +261,7 @@ class TestPipeline(unittest.TestCase):
         self.assertNotEqual(results[0]["email_id"], results[1]["email_id"])
 
 
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    unittest.main()

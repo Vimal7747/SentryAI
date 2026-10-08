@@ -22,11 +22,12 @@ structured outputs from each stage.
 
 from __future__ import annotations
 
-import traceback
+from copy import deepcopy
 from typing import Any, Dict, List, Optional, Union
 
 from sentryai import enrichment as _enr
 from sentryai.models import EmailInput
+from sentryai.validation import validate_email, collection, budget, MAX_BATCH, DEFAULT_LOOKUP_CALLS, MAX_IOCS
 from sentryai.stage4_mitre import map_techniques
 from sentryai.stage5_scoring import classify, total_score
 from sentryai.stage6_verdict import build_verdict
@@ -84,6 +85,12 @@ def _guard_body_size(email: EmailInput, extra_notes: List[str]) -> None:
 def _ensure_email(email_input: Union[Dict[str, Any], EmailInput]) -> EmailInput:
     """Return an EmailInput, parsing a dict if necessary."""
     if isinstance(email_input, EmailInput):
+        from dataclasses import asdict
+        data = asdict(email_input)
+        from sentryai.validation import mapping
+        headers = mapping(data["headers"], "headers")
+        headers["from"] = headers.pop("from_", None)
+        validate_email(data)
         return email_input
     return EmailInput.from_dict(email_input)
 
@@ -140,6 +147,8 @@ def analyze(
     enricher: Optional[_enr.Enricher] = None,
     trust_missing_auth: bool = False,
     max_url_lookups: Optional[int] = None,
+    trusted_auth_results: bool = False,
+    max_lookup_calls: int = DEFAULT_LOOKUP_CALLS,
 ) -> Dict[str, Any]:
     """Run the full six-stage analysis pipeline on a single email.
 
@@ -147,6 +156,10 @@ def analyze(
         email_input: Either a raw dict (will be parsed via
                      ``EmailInput.from_dict``) or an ``EmailInput``
                      instance.
+        trusted_auth_results: Accept normalized auth only from a separately
+                     trusted mail verifier; never authorize raw header claims.
+        max_lookup_calls: Total provider calls including retries, per email
+                     (default 100; range 0..1000).
         enricher:    An ``Enricher`` instance for IOC reputation lookups.
                      Defaults to ``StubEnricher`` (offline, deterministic).
 
@@ -157,8 +170,14 @@ def analyze(
         Any unhandled exception from a stage propagates to the caller.
         Use ``analyze_batch`` for fault-isolated batch processing.
     """
-    email = _ensure_email(email_input)
-    enricher = _make_enricher(enricher)
+    from sentryai.validation import InputValidationError
+    if type(trusted_auth_results) is not bool or type(trust_missing_auth) is not bool:
+        raise InputValidationError("Authentication trust options must be booleans")
+    email = deepcopy(_ensure_email(email_input))
+    budget(max_lookup_calls, "max_lookup_calls")
+    if max_url_lookups is not None:
+        budget(max_url_lookups, "max_url_lookups")
+    enricher = _enr.BudgetEnricher(_make_enricher(enricher), max_lookup_calls)
     extra_notes: List[str] = []
 
     # Cap untrusted body size before any regex scanning (resource guard).
@@ -169,7 +188,7 @@ def analyze(
     # ------------------------------------------------------------------
     if _STAGE1_AVAILABLE:
         header_signals, ips_to_enrich = _analyze_headers(
-            email, trust_missing_auth=trust_missing_auth
+            email, trust_missing_auth=trust_missing_auth, trusted_auth_results=trusted_auth_results
         )
         if trust_missing_auth and any(
             v is None for v in (email.headers.received_spf,
@@ -182,6 +201,10 @@ def analyze(
     else:
         header_signals, ips_to_enrich = _stub_header_analysis(email)
         extra_notes.append("stage1_headers module unavailable; header analysis skipped.")
+
+    if not trusted_auth_results and any(v is not None for v in (
+            email.headers.received_spf, email.headers.dkim_result, email.headers.dmarc_result)):
+        extra_notes.append("Unverified authentication claims ignored; use only results from a trusted verifier.")
 
     # ------------------------------------------------------------------
     # Stage 2: Content analysis
@@ -208,10 +231,23 @@ def analyze(
                     existing_ips.append(ip)
             raw_iocs["ips"] = existing_ips
 
+        # Bound retained IOCs and all provider calls (including retries).
+        remaining = MAX_IOCS
+        for kind, values in raw_iocs.items():
+            if len(values) > remaining:
+                extra_notes.append("IOC limit reached; extraction analysis incomplete.")
+            bounded = values[:remaining]
+            if any(len(value) > 4096 for value in bounded):
+                extra_notes.append("Oversized extracted indicator skipped; analysis incomplete.")
+            raw_iocs[kind] = [value for value in bounded if len(value) <= 4096]
+            remaining -= len(raw_iocs[kind])
         ioc_results, ioc_notes = _enrich_iocs(raw_iocs, enricher, max_url_lookups=max_url_lookups)
     else:
         ioc_results = []
         ioc_notes = ["stage3_iocs module unavailable; IOC enrichment skipped."]
+
+    if enricher.exhausted:
+        extra_notes.append(f"Provider call budget ({max_lookup_calls}) exhausted; analysis incomplete.")
 
     # ------------------------------------------------------------------
     # Stage 4: MITRE ATT&CK mapping (RAG retrieval)
@@ -248,11 +284,17 @@ def analyze(
     # PHISHING verdict driven by strong content/header signals can still be
     # reported with low confidence when threat-intel enrichment was incomplete
     # (code-review D).
-    if ioc_notes:
+    analysis_incomplete = bool(ioc_notes) or any(
+        "truncated" in n or "incomplete" in n or "Unverified" in n or "unavailable" in n for n in extra_notes)
+    if any(v is None for v in (header_signals.spf, header_signals.dkim, header_signals.dmarc)):
+        analysis_incomplete = True
+        extra_notes.append("Authentication evidence incomplete; missing results are not verified passes.")
+    if analysis_incomplete:
         confidence = "low"
+        human_review = True
         extra_notes.append(
-            "Confidence downgraded to low: one or more IOC lookups failed, "
-            "so infrastructure reputation data is incomplete."
+            "Confidence downgraded to low: analysis was incomplete; "
+            "manual review is required."
         )
 
     # ------------------------------------------------------------------
@@ -291,14 +333,16 @@ def analyze_batch(
     enricher: Optional[_enr.Enricher] = None,
     trust_missing_auth: bool = False,
     max_url_lookups: Optional[int] = None,
+    trusted_auth_results: bool = False,
+    max_lookup_calls: int = DEFAULT_LOOKUP_CALLS,
 ) -> List[Dict[str, Any]]:
     """Run the pipeline on a list of emails, returning one verdict per email.
 
     Each email is processed INDEPENDENTLY:
     * If ``enricher`` is None, a fresh ``StubEnricher`` is created for each
       email so that ``tools_called`` state does not leak between emails.
-    * If a caller-supplied ``enricher`` is provided it is shared across all
-      emails (the caller takes responsibility for state isolation).
+    * A supplied provider is shared, but call budgets and verdict tool metadata
+      are isolated per email.
 
     A failure in one email does not abort the batch. On exception the
     corresponding list entry contains a minimal error verdict dict with
@@ -312,17 +356,20 @@ def analyze_batch(
     Returns:
         A list of verdict dicts in the same order as ``emails``.
     """
+    collection(emails, "batch", MAX_BATCH)
+    budget(max_lookup_calls, "max_lookup_calls")
     results: List[Dict[str, Any]] = []
 
     for idx, email_input in enumerate(emails):
-        # Use a fresh enricher per email when none is supplied, to prevent
-        # tools_called bleeding between independent analyses.
+        # Provider may be shared; analyze creates a fresh budget and tool
+        # metadata wrapper for each email.
         per_email_enricher = enricher if enricher is not None else _enr.StubEnricher()
 
         try:
             result = analyze(email_input, enricher=per_email_enricher,
                              trust_missing_auth=trust_missing_auth,
-                             max_url_lookups=max_url_lookups)
+                             max_url_lookups=max_url_lookups,
+                             trusted_auth_results=trusted_auth_results, max_lookup_calls=max_lookup_calls)
         except Exception as exc:  # pylint: disable=broad-except
             # Attempt to extract an email_id for the error record.
             try:
@@ -331,7 +378,6 @@ def analyze_batch(
             except Exception:
                 email_id = f"batch-item-{idx}"
 
-            tb_summary = traceback.format_exc(limit=5)
             result = {
                 "email_id": email_id,
                 "verdict": "ERROR",
@@ -357,7 +403,7 @@ def analyze_batch(
                     "ioc_count": 0,
                     "processing_notes": (
                         f"Pipeline exception at batch index {idx}: "
-                        f"{type(exc).__name__}: {exc}. Traceback summary: {tb_summary}"
+                        f"{type(exc).__name__}: analysis failed; manual review required."
                     ),
                 },
             }

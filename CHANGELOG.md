@@ -36,3 +36,16 @@ All notable changes to SentryAI are documented here. Versioning is semantic.
 - Initial six-stage pipeline: header auth, content signals, IOC extraction +
   enrichment, MITRE ATT&CK/ATLAS mapping, scoring, JSON verdict.
 - Prompt-injection defense; offline `StubEnricher`; CLI; test suite.
+
+
+## Unreleased — security hardening
+
+- Check each distinct URL instead of inheriting the first URL's domain verdict.
+- Preserve unknown offline/live reputation; incomplete scans require review.
+- Require caller authorization for normalized SPF/DKIM/DMARC verifier results;
+  raw Gmail authentication/ARC headers are ignored. Integrations must migrate
+  to `trusted_auth_results=True` only for separately verified evidence.
+- Validate untrusted email types, authentication enums and SHA-256 values;
+  bound bodies, collections, input bytes, extracted IOCs and provider calls.
+- Distinguish credential requests from safety advice and require explicit
+  trusted brand domains. Publish an offline public-corpus accuracy evaluation.

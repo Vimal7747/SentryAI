@@ -57,7 +57,7 @@ live API enrichment in `api_enrichment.py`; `.env` loading in `config.py`.
 python -m sentryai examples/sample_email.json
 
 # Live threat-intel APIs (reads keys from env / .env)
-# URLs are deduped by registrable domain; distinct-domain lookups capped at 15.
+# URLs are deduped by exact URL; distinct-URL lookups capped at 15.
 python -m sentryai examples/sample_email.json --live
 
 # Raise/lower the per-email URL lookup budget
@@ -110,15 +110,54 @@ verdict = analyze(gmail_message_to_email_input(gmail_message),
                   trust_missing_auth=True)
 ```
 
-Gmail exposes the body + common headers but **not** the raw
-`Authentication-Results` header, so SPF/DKIM/DMARC arrive as absent. Use
-`trust_missing_auth=True` (CLI: `--trust-missing-auth`) for Gmail-sourced mail
-so legitimate messages aren't auto-flagged for headers the source can't
-provide. Explicit `fail`/`none`/`neutral` results are still scored.
+Authentication results are **unverified by default**. The adapter ignores raw
+`Authentication-Results`, `ARC-Authentication-Results`, and `Received-SPF`,
+including duplicates and claims naming a trusted server. Headers alone do not
+establish who performed verification. Results passed inside message JSON
+cannot authorize trust.
+
+Only an integration that obtained results from a trusted receiving verifier
+may supply `verified_auth_results={"spf": "pass", "dkim": "pass", "dmarc": "pass"}`
+as a separate adapter argument, then call `analyze(..., trusted_auth_results=True)`.
+The CLI equivalent is `--trusted-auth-results`, intended only for normalized
+input from that verifier. SentryAI does not itself verify SPF, DKIM, or DMARC.
+
+`trust_missing_auth=True` (CLI: `--trust-missing-auth`) makes missing results
+neutral for scoring, but always lowers confidence and requires manual review.
+Without it, missing results retain the conservative +50 score. Verified
+`fail`/`none`/`neutral` results remain risk signals even with this option.
+
+## Input and work limits
+
+Malformed field types raise `InputValidationError` before provider calls.
+The CLI returns exit code 1 for invalid single input; a failed item in a batch
+has an `ERROR` result and makes the CLI return 2 while preserving other results.
+
+| Resource | Limit |
+|---|---|
+| CLI JSON input | 2 MB |
+| Body text and HTML | 1,000,000 characters each accepted; 200,000 scanned |
+| Headers, identifiers, URL strings | 4,096 characters per field |
+| Attachments and supplied URLs | 100 each per email |
+| Emails per batch | 100 |
+| Retained extracted indicators | 200 per email |
+| Total provider calls, including retries | 100 per email by default |
+| HTTP response | 2 MB |
+
+`--max-lookup-calls N` / `max_lookup_calls=N` controls the total call budget
+(range 0..1000; 0 disables calls), in addition to the URL lookup budget.
+Each email in a batch gets its own budget. Truncated scans, skipped indicators,
+missing auth and unavailable reputation data require manual review; benign
+labels with incomplete analysis do not recommend automatic delivery.
+
+## Detection evaluation
+
+See [the reproducible public-corpus evaluation](docs/evaluation.md). This is
+an offline diagnostic on public samples, not a production accuracy claim.
 
 ## Threat-intel backends (`Enricher`)
 
-- **`StubEnricher`** (default) — offline, deterministic; clean/neutral except a
+- **`StubEnricher`** (default) — offline, deterministic; unknown except a
   small built-in demo table. Runs and tests with no network or keys.
 - **`PrefetchedEnricher`** — serves results gathered out-of-band (the `--intel`
   cache); falls back to the stub for IOCs not in the cache.
@@ -131,14 +170,13 @@ provide. Explicit `fail`/`none`/`neutral` results are still scored.
 
 ### Rate-limit protection (URL dedupe + lookup budget)
 
-URLs are deduped by **registrable domain** before enrichment, so an email with
-dozens of tracking links to the same host costs a single reputation lookup and
-is scored once (sibling URLs are still listed as IOCs but inherit the verdict
-with 0 points). On top of that, `--max-url-lookups N` caps the number of
-distinct-domain URL lookups — defaulting to **15 under `--live`** (unlimited
-otherwise). URLs beyond the budget are marked `unknown` with a note, with no
-extra API calls. Together these keep a normal marketing email (which can carry
-50+ links) comfortably inside the free-tier limits.
+Each distinct URL is checked independently: a clean path does not establish
+that another path or subdomain is safe. Exact duplicate URLs are checked and
+scored once. `--max-url-lookups N` caps URL lookups, defaulting to **15 under
+`--live`** (unlimited otherwise). URLs beyond the budget remain `unknown`.
+Missing reputation data or truncated bodies lower confidence to `low` and
+require manual review before delivery. Offline demo records cover only a
+small built-in table; all other indicators remain unknown.
 
 ### API keys (environment variables)
 
@@ -190,7 +228,7 @@ python -m unittest discover -s tests -v
   (offline), incl. 404/missing-key/network-failure handling.
 - `test_trust_missing_auth.py` — absent auth neutralised, explicit failures
   still scored, Gmail false-positive fixed, bad mail still caught.
-- `test_live_budget.py` — URL dedupe-by-domain (one lookup, scored once) and
+- `test_live_budget.py` — independent URL checks, exact-URL deduplication and
   the `--max-url-lookups` budget cap.
 
 ## Detection notes (learned the hard way)

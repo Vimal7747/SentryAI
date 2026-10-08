@@ -24,7 +24,6 @@ from sentryai.textutils import (
     domain_from_email as _shared_domain_from_email,
     email_from_field as _shared_email_from_field,
     extract_urls as _shared_extract_urls,
-    registrable_domain as _registrable_domain,
 )
 
 
@@ -163,11 +162,8 @@ def enrich_iocs(
         results.append(result)
 
     # ----------------------------------------------------------------- URLs
-    # Dedupe by registrable domain so a message with dozens of tracking links
-    # to the same host costs ONE reputation lookup (and is scored once, not
-    # N times). ``max_url_lookups`` caps distinct-domain lookups so a single
-    # email cannot blow through a rate-limited API budget (code-review #1/#2).
-    domain_cache: Dict[str, IOCResult] = {}
+    # Reputation is URL-specific: paths and subdomains can differ in safety.
+    url_cache: Dict[str, IOCResult] = {}
     url_lookups = 0
     for url in iocs.get("urls", []):
         host = _shared_domain_from_url(url)
@@ -179,14 +175,13 @@ def enrich_iocs(
                 detail="URL has no resolvable host; no reputation lookup performed.",
                 points_contributed=0, raw={}))
             continue
-        regdom = _registrable_domain(host) or host
-        rep = domain_cache.get(regdom)
+        rep = url_cache.get(url)
         if rep is not None:
-            # Sibling URL on an already-checked domain: reuse verdict, 0 points.
+            # Exact duplicate URL: reuse verdict without counting evidence twice.
             results.append(IOCResult(
                 ioc_type="url", value=url, sources_queried=rep.sources_queried,
                 verdict=rep.verdict,
-                detail=(f"Same registrable domain as {rep.value}; verdict reused "
+                detail=(f"Duplicate URL {rep.value}; verdict reused "
                         f"and not re-counted."),
                 points_contributed=0, raw={}))
             continue
@@ -202,7 +197,7 @@ def enrich_iocs(
             continue
         result = _enrich_url(url, enricher, notes)
         url_lookups += 1
-        domain_cache[regdom] = result
+        url_cache[url] = result
         results.append(result)
 
     # --------------------------------------------------------------- Domains
@@ -276,9 +271,12 @@ def _enrich_ip(ip: str, enricher: Enricher, notes: List[str]) -> IOCResult:
         elif gn_noise and gn_classification != "benign":
             verdict = SUSPICIOUS
             points = 5
-        else:
+        elif abuse is not None or gn_classification == "benign" or bool((grey or {}).get("riot")):
             verdict = CLEAN
             points = 0
+        else:
+            verdict = UNKNOWN
+            notes.append("IP reputation unavailable: GreyNoise has no observation.")
 
         detail = " ".join(detail_parts) if detail_parts else ""
 
@@ -358,7 +356,11 @@ def _enrich_domain(domain: str, enricher: Enricher, notes: List[str]) -> IOCResu
         registrar: str = whois.get("registrar", "unknown") or "unknown"
         country: str = whois.get("country", "unknown") or "unknown"
 
-        if age is not None and age < 30:
+        if age is None:
+            verdict = UNKNOWN
+            detail = "Domain registration age unavailable; reputation is unknown."
+            notes.append("Domain registration age unavailable; age analysis incomplete.")
+        elif age < 30:
             verdict = SUSPICIOUS
             points = 20
             detail = (
@@ -447,18 +449,20 @@ def _safe_call(
     Returns the result dict or None.  Appends a human-readable note on
     double failure so the caller can record the gap without crashing.
     """
-    try:
-        return fn(arg)
-    except Exception as first_exc:  # noqa: BLE001
+    for attempt in range(2):
         try:
-            return fn(arg)
-        except Exception as second_exc:  # noqa: BLE001
-            notes.append(
-                f"{tool_name}({ioc_value!r}) failed after retry: "
-                f"{type(second_exc).__name__}: {second_exc} "
-                f"(first error: {type(first_exc).__name__}: {first_exc})"
-            )
+            result = fn(arg)
+        except Exception as exc:
+            if attempt == 0:
+                continue
+            notes.append(f"{tool_name} failed after retry: {type(exc).__name__}: {exc}")
             return None
+        if not isinstance(result, dict) or not result:
+            # No data may mean missing credentials or an unobserved IOC, not
+            # a transient failure. Record the gap without doubling API usage.
+            notes.append(f"{tool_name} returned no data; reputation is unknown.")
+            return None
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +481,7 @@ def _bodies(email: EmailInput) -> List[str]:
 
 def _append_unique(lst: List[str], value: str) -> None:
     """Append value to lst only if not already present (order-stable dedup)."""
-    if value not in lst:
+    if len(lst) < 201 and value not in lst:
         lst.append(value)
 
 

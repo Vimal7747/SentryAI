@@ -31,7 +31,7 @@ class TestGmailAdapter(unittest.TestCase):
                 {"name": "X-Originating-IP", "value": "[185.220.101.45]"},
             ],
         }
-        out = gmail_message_to_email_input(msg)
+        out = gmail_message_to_email_input(msg, verified_auth_results={"spf": "fail", "dkim": "none", "dmarc": "fail"})
         h = out["headers"]
         self.assertEqual(h["from"], "Security <security@paypa1-verify.com>")
         self.assertEqual(h["subject"], "Urgent: verify your account")

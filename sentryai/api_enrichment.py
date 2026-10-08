@@ -41,7 +41,10 @@ def _urllib_http(method: str, url: str, headers: Dict[str, str],
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", "replace")
+            payload = resp.read(2_000_001)
+            if len(payload) > 2_000_000:
+                return resp.status, None
+            body = payload.decode("utf-8", "replace")
             try:
                 return resp.status, json.loads(body) if body else None
             except json.JSONDecodeError:
@@ -49,7 +52,10 @@ def _urllib_http(method: str, url: str, headers: Dict[str, str],
     except urllib.error.HTTPError as e:
         # 404 etc. — read body if present so callers can distinguish.
         try:
-            body = e.read().decode("utf-8", "replace")
+            payload = e.read(2_000_001)
+            if len(payload) > 2_000_000:
+                return e.code, None
+            body = payload.decode("utf-8", "replace")
             parsed = json.loads(body) if body else None
         except Exception:  # noqa: BLE001
             parsed = None
@@ -158,7 +164,9 @@ class ApiEnricher(Enricher):
         if status != 200 or not body:
             return None
         attrs = (body.get("data") or {}).get("attributes") or {}
-        stats = attrs.get("last_analysis_stats") or {}
+        stats = attrs.get("last_analysis_stats")
+        if not isinstance(stats, dict) or not stats:
+            return None
         cats = attrs.get("categories") or {}
         return {
             "url": url,
@@ -179,7 +187,9 @@ class ApiEnricher(Enricher):
         if status == 404 or status != 200 or not body:
             return None
         attrs = (body.get("data") or {}).get("attributes") or {}
-        stats = attrs.get("last_analysis_stats") or {}
+        stats = attrs.get("last_analysis_stats")
+        if not isinstance(stats, dict) or not stats:
+            return None
         return {
             "sha256": sha256,
             "malicious_votes": int(stats.get("malicious", 0) or 0),

@@ -64,7 +64,7 @@ def email_from_field(addr: Optional[str]) -> str:
     return candidate.lower() if EMAIL_RE.fullmatch(candidate) else ""
 
 
-def extract_urls(texts: List[str], seed: Optional[List[str]] = None) -> List[str]:
+def extract_urls(texts: List[str], seed: Optional[List[str]] = None, max_results: int = 201) -> List[str]:
     """Collect URLs from *seed* (kept first, in order) then from *texts*.
 
     De-duplicated, insertion-order stable.
@@ -75,6 +75,8 @@ def extract_urls(texts: List[str], seed: Optional[List[str]] = None) -> List[str
         if url and url not in seen:
             seen.add(url)
             out.append(url)
+            if len(out) >= max_results:
+                return out
     for text in texts:
         if not text:
             continue
@@ -83,6 +85,8 @@ def extract_urls(texts: List[str], seed: Optional[List[str]] = None) -> List[str
             if url not in seen:
                 seen.add(url)
                 out.append(url)
+                if len(out) >= max_results:
+                    return out
     return out
 
 

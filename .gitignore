@@ -21,3 +21,6 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+# Downloaded evaluation corpora (never publish email contents)
+.evaluation-data/
